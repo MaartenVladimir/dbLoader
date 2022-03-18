@@ -12,15 +12,15 @@ public class Main {
         Connection conn = getConnection(args[0]);
         String pathToActivities = args[1];
         File dir = new File(pathToActivities);
-        insertActivitiesIntoDatabase(dir, conn);
+        insertActivitiesIntoDatabase(dir, conn, null);
     }
 
-    public static void insertActivitiesIntoDatabase(File dir, Connection conn) throws IOException, SQLException {
+    public static void insertActivitiesIntoDatabase(File dir, Connection conn, File parent) throws IOException, SQLException {
         if(dir.isDirectory()) {
             File[] files = dir.listFiles();
             Arrays.stream(files).forEach(x-> {
                 try {
-                    insertActivitiesIntoDatabase(x, conn);
+                    insertActivitiesIntoDatabase(x, conn, dir);
                 } catch (IOException | SQLException e) {
                     e.printStackTrace();
                 }
@@ -31,13 +31,28 @@ public class Main {
                 InputStream inJson = new FileInputStream(dir.getAbsolutePath());
                 JSONclass jsoNclass = new ObjectMapper().readValue(inJson, JSONclass.class);
                 String imageSource = dir.getAbsolutePath();
-                jsoNclass.imageSource = imageSource.replace(".json", ".png");
+                File[] siblings = parent.listFiles();
+                String extension = determineExtension(siblings, dir);
+                jsoNclass.imageSource = imageSource.replace(".json", extension);
                 insertJSON(jsoNclass, conn);
                 System.out.println(a++);
             }
         }
     }
 
+    public static String determineExtension(File[] siblings, File child) {
+        String childName = child.getName().replace(".json", "");
+        for (File sibling : siblings) {
+            if (sibling.getName().contains(childName)) {
+                if (sibling.getName().contains(".json")) {
+                    continue;
+                }
+                return sibling.getName().replace(childName, "");
+            }
+        }
+        System.out.println("Cant find image associated with : " + childName);
+        return null;
+    }
     public static void insertJSON(JSONclass jsoNclass, Connection connection) throws SQLException {
         PreparedStatement preparedStatement = connection.prepareStatement(
                 "INSERT INTO ACTIVITY VALUES (NEXT VALUE FOR ACT_SEQ, ?, ?, ?, ?)"

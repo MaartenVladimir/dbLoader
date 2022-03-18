@@ -3,7 +3,6 @@ plugins {
 }
 
 group 'org.example'
-version '1.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
@@ -28,8 +27,7 @@ task buildJar(type: Jar) {
                 'Main-Class': 'Main'
         )
     }
-    classifier = 'all'
-    baseName = 'dbLoader'
+    baseName = 'dbloader'
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }

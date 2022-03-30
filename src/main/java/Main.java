@@ -1,66 +1,89 @@
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.sql.*;
-import java.util.Arrays;
+
+import org.codehaus.jackson.map.DeserializationConfig;
 import org.codehaus.jackson.map.ObjectMapper;
 
 public class Main {
     public static int a = 0;
-    public static void main(String[] args) throws SQLException, IOException {
-        Connection conn = getConnection(args[0]);
-        String pathToActivities = args[1];
+    public static void main(String[] args) throws IOException {
+        BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("------------------------------------------------------------------------------------------------------------------");
+        System.out.println("Give the path to your quizzzz.mv.db file (example: c:/user/example/repository-template) :");
+        String pathToDatabase = userInput.readLine();
+        checkIfFileExists(pathToDatabase);
+        System.out.println("Given path found (does not guarantee correctness)");
+        System.out.println("Give the path to the folder containing the activities.json (example: c:/user/example/activities_folder");
+        System.out.println("Note! do not include the activities.json at the end of the path.");
+        String pathToActivities = userInput.readLine();
+        checkIfFileExists(pathToActivities);
+
+        prepareInsertion(pathToActivities, pathToDatabase);
+    }
+
+    public static void checkIfFileExists(String path) {
+        File testFile = new File(path);
+        if (!testFile.exists()) {
+            System.out.println("The given path does not exist. terminating program");
+            System.exit(1);
+        }
+    }
+    public static void prepareInsertion(String pathToActivities, String pathToDatabase) {
+        Connection conn = null;
+        try {
+            conn = getConnection(pathToDatabase);
+        } catch (SQLException e) {
+            System.out.println("FATAL ERROR: Failed to make a connection to the .mv.db file; Make sure that the path is as specified");
+            e.printStackTrace();
+        }
         File dir = new File(pathToActivities);
-        insertActivitiesIntoDatabase(dir, conn, null);
-    }
-
-    public static void insertActivitiesIntoDatabase(File dir, Connection conn, File parent) throws IOException, SQLException {
-        if(dir.isDirectory()) {
-            File[] files = dir.listFiles();
-            Arrays.stream(files).forEach(x-> {
-                try {
-                    insertActivitiesIntoDatabase(x, conn, dir);
-                } catch (IOException | SQLException e) {
-                    e.printStackTrace();
-                }
-            });
-        }
-        if (dir.isFile()) {
-            if (dir.getAbsolutePath().contains("json")) {
-                InputStream inJson = new FileInputStream(dir.getAbsolutePath());
-                JSONclass jsoNclass = new ObjectMapper().readValue(inJson, JSONclass.class);
-                String imageSource = dir.getAbsolutePath();
-                File[] siblings = parent.listFiles();
-                String extension = determineExtension(siblings, dir);
-                jsoNclass.imageSource = imageSource.replace(".json", extension);
-                insertJSON(jsoNclass, conn);
-                System.out.println(a++);
-            }
+        try {
+            insertActivitiesIntoDatabase(dir, conn);
+        } catch (IOException | SQLException e) {
+            e.printStackTrace();
         }
     }
 
-    public static String determineExtension(File[] siblings, File child) {
-        String childName = child.getName().replace(".json", "");
-        for (File sibling : siblings) {
-            if (sibling.getName().contains(childName)) {
-                if (sibling.getName().contains(".json")) {
-                    continue;
-                }
-                return sibling.getName().replace(childName, "");
+    public static File findJsonFile(File startPoint) {
+        File[] childFiles = startPoint.listFiles();
+        for (File file : childFiles) {
+            if (file.getAbsolutePath().contains("activities.json")) {
+                return file;
             }
         }
-        System.out.println("Cant find image associated with : " + childName);
         return null;
     }
-    public static void insertJSON(JSONclass jsoNclass, Connection connection) throws SQLException {
+
+    public static void insertActivitiesIntoDatabase(File pathToActivities, Connection conn) throws IOException, SQLException {
+        File jsonFile = findJsonFile(pathToActivities);
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.configure(DeserializationConfig.Feature.USE_BIG_INTEGER_FOR_INTS, true);
+        InputStream inJson = new FileInputStream(jsonFile.getAbsolutePath());
+        Activity[] activities = mapper.readValue(inJson, Activity[].class);
+        int counter = 0;
+        for (Activity activity : activities) {
+            File fileToImage = new File(pathToActivities, activity.getImage_path());
+            if (!fileToImage.exists()) {
+                System.out.println("found defect image, continuing without it");
+                continue;
+            }
+            counter++;
+            activity.setImage_path(fileToImage.getAbsolutePath());
+            insertJSON(activity, conn);
+        }
+
+        System.out.println("Inserted " + counter + " activities");
+    }
+
+    public static void insertJSON(Activity activity, Connection connection) throws SQLException {
         PreparedStatement preparedStatement = connection.prepareStatement(
                 "INSERT INTO ACTIVITY VALUES (NEXT VALUE FOR ACT_SEQ, ?, ?, ?, ?)"
         );
-        preparedStatement.setLong(1, jsoNclass.getConsumption_in_wh());
-        preparedStatement.setString(2, jsoNclass.imageSource);
-        preparedStatement.setString(3, jsoNclass.getSource());
-        preparedStatement.setString(4, jsoNclass.getTitle());
+        preparedStatement.setLong(1, activity.getConsumption_in_wh());
+        preparedStatement.setString(2, activity.image_path);
+        preparedStatement.setString(3, activity.getSource());
+        preparedStatement.setString(4, activity.getTitle());
         preparedStatement.executeUpdate();
     }
 
